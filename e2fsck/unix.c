@@ -721,6 +721,10 @@ static void parse_extended_opts(e2fsck_t ctx, const char *opts)
 		} else if (strcmp(token, "fixes_only") == 0) {
 			ctx->options |= E2F_OPT_FIXES_ONLY;
 			continue;
+		} else if (strcmp(token, "unshare_blocks") == 0) {
+			ctx->options |= E2F_OPT_UNSHARE_BLOCKS;
+			ctx->options |= E2F_OPT_FORCE;
+			continue;
 		} else {
 			fprintf(stderr, _("Unknown extended option: %s\n"),
 				token);
@@ -741,6 +745,7 @@ static void parse_extended_opts(e2fsck_t ctx, const char *opts)
 		fputs(("\tnodiscard\n"), stderr);
 		fputs(("\treadahead_kb=<buffer size>\n"), stderr);
 		fputs(("\tbmap2extent\n"), stderr);
+		fputs(("\tunshare_blocks\n"), stderr);
 		fputc('\n', stderr);
 		exit(1);
 	}
@@ -1897,6 +1902,14 @@ no_journal:
 		ext2fs_mark_super_dirty(fs);
 	}
 
+	if (ext2fs_has_feature_shared_blocks(ctx->fs->super) &&
+	    (ctx->options & E2F_OPT_UNSHARE_BLOCKS) &&
+	    (ctx->options & E2F_OPT_NO))
+		/* Don't try to write or flush I/O, we just wanted to know whether or
+		 * not there were enough free blocks to undo deduplication.
+		 */
+		goto skip_write;
+
 	e2fsck_write_bitmaps(ctx);
 	if (fs->flags & EXT2_FLAG_DIRTY) {
 		pctx.errcode = ext2fs_flush(ctx->fs);
@@ -1931,6 +1944,8 @@ no_journal:
 			exit_value |= FSCK_REBOOT;
 		}
 	}
+
+skip_write:
 	if (!ext2fs_test_valid(fs) ||
 	    ((exit_value & FSCK_CANCELED) &&
 	     (sb->s_state & EXT2_ERROR_FS))) {
